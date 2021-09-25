@@ -1,0 +1,6 @@
+<configuration>
+    <input>
+        <net-file value="us101.net.xml"/>
+        <route-files value="us101.rou.xml"/>
+    </input>
+</configuration>
