@@ -1,6 +1,22 @@
 <configuration>
     <input>
         <net-file value="us101.net.xml"/>
-        <route-files value="us101.rou.xml"/>
+        <route-files value="test.rou.xml"/>
     </input>
+
+    <time>
+	<begin value="0"/>
+	<end value="3600"/>
+	<step-length value="0.5"/>
+    </time>
+
+    <output>
+	<fcd-output value="us101.test.output.fcd.xml"/>
+	<tripinfo-output value="us101.test.tripinfo.fcd.xml"/>
+    </output>
+
+    <viewsettings>
+        <scheme name="real world"/>
+    </viewsettings>
+
 </configuration>
