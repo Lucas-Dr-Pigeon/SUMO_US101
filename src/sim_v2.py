@@ -20,36 +20,25 @@ class Simulation:
     def __init__(self):
         self.vehicleList = []
         self.step = 0
-        self.vehicleSub = []
-        self.SubscriptionResults = []
         
     def Check_Vehicles(self):
         for _veh in traci.vehicle.getIDList():
             if _veh not in self.vehicleList:
                 self.vehicleList.append(_veh)
                 
-    def Run(self, capture = None):           
+    def Run(self):
         for _step in tqdm.trange(N_STEPS):
             traci.simulationStep()
-            if capture:
-                self.Capture(capture)
             time = traci.simulation.getCurrentTime()
-            self.SubscriptionResults.append(traci.vehicle.getAllSubscriptionResults())
-            self.step += 1
+            self.Check_Vehicles()
             
+    def Capture(self, zone):
+        for vehID in traci.vehicle.getIDList():
+            _lane = traci.vehicle.getLaneID(vehID)
+            _lanePos = traci.vehicle.getLanePosition(vehID)
             
-    def Capture(self, detectionZone):
-        for laneID in detectionZone:
-            vehDetectList = traci.lane.getLastStepVehicleIDs(laneID)
-            for vehID in self.vehicleSub:
-                if traci.vehicle.getLaneID(vehID) not in detectionZone:
-                    self.vehicleSub.remove(vehID)
-                    traci.vehicle.unsubscribe(vehID)
-            for vehID in vehDetectList:
-                if vehID not in self.vehicleSub:
-                    self.vehicleSub.append(vehID)
-                    traci.vehicle.subscribe(vehID, (tc.VAR_LANEPOSITION, tc.VAR_DISTANCE, tc.VAR_LANE_ID))
-
+        
+            
 def Get_A_SEGMENT(start_lane: str, target_length=1000, start_lane_pos=100)->dict:
     if not TRACI_START:
         raise ("Start traci first!")
@@ -62,41 +51,41 @@ def Get_A_SEGMENT(start_lane: str, target_length=1000, start_lane_pos=100)->dict
     
     if NOT_A_SEGMENT(start_lane):
         raise ("The starting lane was on a ramp!")
-    
-    ''' initiate the order of lanes to 0 '''
+        
     _index = 0
     
-    ''' first lane is long enough? first lane isn't long enough? ''' 
     if target_length <= thisLen - start_lane_pos:
         _dictLaneDist[start_lane] = [start_lane_pos, start_lane_pos + target_length, _index]
         _dictOfDict[start_lane] = _dictLaneDist
     else:
         _connLanes = traci.lane.getLinks(start_lane)
-        _dictLaneDist[start_lane] = [start_lane_pos, thisLen, _index]
+        _dictLaneDist[start_lane] = [start_lane_pos, thisLen]
         _sumLen += thisLen - start_lane_pos
-        _ = GET_NEXT_CONNECTED_LANE(_connLanes, _dictLaneDist, _sumLen, _dictOfDict, target_length, _index)
+        _ = GET_NEXT_CONNECTED_LANE(_connLanes, _dictLaneDist, _sumLen, _dictOfDict, target_length)
     return _dictOfDict
     
-def GET_NEXT_CONNECTED_LANE(connLanes, dictLaneDist, sumLen, dictOfDict, target_length, index):
+def GET_NEXT_CONNECTED_LANE(connLanes, dictLaneDist, sumLen, dictOfDict, target_length):
     for _next in connLanes:
         _nextLane = _next[0]
+        # print (_nextLane)
         thisLen = traci.lane.getLength(_nextLane)
         if NOT_A_SEGMENT(_nextLane):
             continue
-        _index = index
-        _index += 1
         if target_length <= thisLen + sumLen:
+            # print (_nextLane)
+            # print (target_length - sumLen)
             copy_dictLaneDist = copy.deepcopy(dictLaneDist)
-            copy_dictLaneDist[_nextLane] = [0, target_length - sumLen, _index]
+            copy_dictLaneDist[_nextLane] = [0, target_length - sumLen]
             dictOfDict[_nextLane] = copy_dictLaneDist
         
         else:
             copy_dictLaneDist = copy.deepcopy(dictLaneDist)
-            copy_dictLaneDist[_nextLane] = [0, thisLen, _index]
+            copy_dictLaneDist[_nextLane] = [0, thisLen]
             _sumLen = sumLen + thisLen
             _connLanes = traci.lane.getLinks(_nextLane)
-            GET_NEXT_CONNECTED_LANE(_connLanes, copy_dictLaneDist, _sumLen, dictOfDict, target_length, _index)
-
+            # print (_connLanes)
+            GET_NEXT_CONNECTED_LANE(_connLanes, copy_dictLaneDist, _sumLen, dictOfDict, target_length)
+            # print (copy_dictLaneDist)
             
 def NOT_A_SEGMENT(thisLane):
     edge = traci.lane.getEdgeID(thisLane)
@@ -115,8 +104,7 @@ def LANE_LENGTH_BY_NODES(thisLane):
             )
     return _len
         
-def CONCATE_TRAVELED_DISTANCE(subList):
-    0
+        
     
     
             
@@ -131,21 +119,16 @@ def CONCATE_TRAVELED_DISTANCE(subList):
 
 if __name__ == "__main__":
     
-    segmentDict = Get_A_SEGMENT('172076623_0', target_length=300)
-    # segmentDict = Get_A_SEGMENT('27287058_0', target_length=1000)
-    detectionZone = list(segmentDict[list(segmentDict.keys())[0]].keys())
     
-    sim = Simulation()
-    sim.Run(capture=detectionZone)
-    
-    lastSubResults = sim.SubscriptionResults
-    
+    # sim = Simulation()
+    # sim.Run()
+    # vehicleList = sim.vehicleList
         
     # checkLanes = traci.lane.getLinks('122900739_0')
     # edge = traci.lane.getEdgeID('172076623_0')
     # laneNo = traci.edge.getLaneNumber('13277214#1')
     
-    
+    segmentDict = Get_A_SEGMENT('24813112_1', target_length=1000)
     
     # testLength = math.sqrt(
     #     (5146.64 - 5103.05)**2 + (6418.50 - 6508.44)**2
