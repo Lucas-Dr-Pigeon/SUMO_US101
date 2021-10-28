@@ -7,10 +7,12 @@ import copy
 import math
 
 
-N_STEPS = 50
+N_STEPS = 2000
+STEP_LENGTH = 0.5
 WORK_PATH = os.path.abspath(os.path.join(os.getcwd(), ".."))
 SUMO_BINARY = "sumo.exe"
-SUMO_CMD = [SUMO_BINARY, "-c", os.path.join(WORK_PATH, "data/us101.sumocfg")]
+SUMO_CMD = [ SUMO_BINARY, "-c", os.path.join(WORK_PATH, "data/us101.sumocfg"),
+             "--step-length", str(STEP_LENGTH)             ]
 print("Starting sumo service ... ")
 traci.start(SUMO_CMD)
 TRACI_START = 1
@@ -130,8 +132,7 @@ def CONCATE_TRAVELED_DISTANCE(subList):
 
 
 if __name__ == "__main__":
-    
-    segmentDict = Get_A_SEGMENT('172076623_0', target_length=300)
+    segmentDict = Get_A_SEGMENT('25003401-AddedOnRampEdge_1', 2000, 100)
     # segmentDict = Get_A_SEGMENT('27287058_0', target_length=1000)
     detectionZone = list(segmentDict[list(segmentDict.keys())[0]].keys())
     

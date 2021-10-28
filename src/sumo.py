@@ -4,10 +4,10 @@ import traci
 
 BEGIN_VALUE = 0
 END_VALUE = 3600
-N_STEPS = 1000
-STEP_LENGTH = 1
+N_STEPS = 250
+STEP_LENGTH = 2
 WORK_PATH = os.path.abspath(os.path.join(os.getcwd(), ".."))
-SUMO_BINARY = "sumo.exe"
+SUMO_BINARY = "sumo-gui.exe"
 SUMO_CMD = [ SUMO_BINARY, "-c", os.path.join(WORK_PATH, "data/us101.sumocfg"),
              "--step-length", str(STEP_LENGTH)
              # "--begin value", str(BEGIN_VALUE)

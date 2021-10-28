@@ -21,7 +21,7 @@ def Plot_Dist_Error_Distribution(tripsDict):
     plt.show()
 
 
-def plot_states(states):
+def plot_states(states, zonename):
     _flo = states[:,1]
     _den = states[:,0]
     plt.scatter(_den, _flo, s=1, color="black")
@@ -29,4 +29,5 @@ def plot_states(states):
     plt.ylabel("flow veh/h")
     plt.xlim(0, 140)
     plt.ylim(0, 2000)
+    plt.title(zonename)
     plt.show()

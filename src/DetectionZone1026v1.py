@@ -13,14 +13,55 @@ class detectorSet(sumo.Sumo):
         super().__init__()
         self.detectors = []
         for _det in detectorParams:
-            print (_det)
             self.detectors.append(detectionZone(*_det))
-        self.detectorStates = None
-        
-    def scan(self, vehicleSub, SubscriptionResults):
-        for _det in self.detectors:
-            _det.scan(vehicleSub, SubscriptionResults)
             
+    def scan(self, allVehicleSub):
+        _allDetectedVehicles = []
+        for _detector in self.detectors:
+            ''' set the detected vehicles at the current step to zero for each detector '''
+            _detector.detectedVehicles = set()
+            _c = 0
+            for laneID in _detector.coveredEdges:
+                _newDetectedVehiclesByLane = traci.lane.getLastStepVehicleIDs(laneID)
+                print (laneID, len(_newDetectedVehiclesByLane))
+                _c += len(_newDetectedVehiclesByLane)
+                _detector.detectedVehicles = _detector.detectedVehicles.union(set([vehID for vehID in _newDetectedVehiclesByLane]))
+                _allDetectedVehicles = list(set(_allDetectedVehicles)|set(_newDetectedVehiclesByLane))
+            # print ("# detected vehicles: ", _c)
+        for vehID in list(set(allVehicleSub) - set(_allDetectedVehicles)):
+            traci.vehicle.unsubscribe(vehID)
+        for vehID in list(set(_allDetectedVehicles) - set(allVehicleSub)):
+            traci.vehicle.subscribe(vehID, (tc.VAR_LANEPOSITION, tc.VAR_DISTANCE, tc.VAR_LANE_ID, tc.VAR_SPEED))
+        allVehicleSub = set(_allDetectedVehicles)
+        return allVehicleSub
+        
+    def detectors_collect(self):
+        ''' let detectors collect traffic states '''
+        for _detector in self.detectors:
+            _detector.collect()
+            
+        
+                
+        
+    # def scan(self, allVehicleSub, allSubResults):
+    #     vehDetectList = []
+    #     allEdges = []
+    #     for detector in self.detectors:
+    #         for laneID in detector.coveredEdges:
+    #             allEdges.append(laneID)
+    #             _detected = traci.lane.getLastStepVehicleIDs(laneID)
+    #             vehDetectList += _detected
+    #             detector.detectedVehicles += _detected
+    #     for vehID in allVehicleSub:
+    #         if traci.vehicle.getLaneID(vehID) not in allEdges:
+    #             allVehicleSub.remove(vehID)
+    #             traci.vehicle.unsubscribe(vehID)
+    #     for vehID in vehDetectList:
+    #         if vehID not in allVehicleSub:
+    #             allVehicleSub.append(vehID)
+    #             traci.vehicle.subscribe(vehID, (tc.VAR_LANEPOSITION, tc.VAR_DISTANCE, tc.VAR_LANE_ID))
+    #     for detector in self.detectors:
+    #         detector.scan()
 
 
 class detectionZone(sumo.Sumo):
@@ -45,6 +86,8 @@ class detectionZone(sumo.Sumo):
             _LaneList.append([startLanePos, thisLen, self.startLane])
             _sumLen += thisLen - startLanePos
             _ = self.get_next_connected_lane(_connLanes, _LaneList, _sumLen, _dictOfDict, self.zoneLength, _index)
+        if len(_dictOfDict.keys()) == 0:
+            raise (("Found no paths long enough starting from %s")%(self.startLane))
         return _dictOfDict
     
     def segment_list_to_dict(self):
@@ -69,7 +112,7 @@ class detectionZone(sumo.Sumo):
         ''' store detected traffic states '''
         self.allstates = np.zeros(shape=(0,5))
         ''' store vehicles subscribed and subscription results '''
-        self.subscribedVehicles = []
+        self.detectedVehicles = set()
         self.subscriptionResults = []
         
     def get_all_trespassing(self, AllSubscriptions):
@@ -102,7 +145,7 @@ class detectionZone(sumo.Sumo):
     
     def CONCATE_VEHICLE_SUB(self, subList):
         _subList = copy.deepcopy(subList)
-        null_trip = {"distance":0, "timespan":0, "accum_lane_pos":0, "trespass":0}
+        null_trip = {"distance":0, "timespan":1, "accum_lane_pos":0, "trespass":0}
         tripsDict = {}
         for timestamp in range(0, len(_subList)):
             if not timestamp < len(subList)-1:
@@ -112,40 +155,35 @@ class detectionZone(sumo.Sumo):
                     if not self.IF_DETECTED(timestamp, vehID, subList):
                         continue
                     tripsDict[(vehID, timestamp)] = copy.deepcopy(null_trip)
-                    self.UPDATE_CHECK(tripsDict[(vehID, timestamp)], _subList, timestamp, vehID)
-                    if tripsDict[(vehID, timestamp)] == null_trip:
-                        del tripsDict[(vehID, timestamp)]
+                    tripsDict[(vehID, timestamp)]["distance"] = subList[timestamp][vehID][64]/3.6 * self.step_length / 2
+                    self.UPDATE_CHECK(tripsDict[(vehID, timestamp)], _subList, timestamp, vehID, startDist=subList[timestamp][vehID][132])
                     _subList[timestamp][vehID] = "checked"
+                    subList = _subList
         return tripsDict    
         
-    def UPDATE_CHECK(self, tripInfo, subList, timestamp, vehID):
-        if vehID in subList[timestamp+1]:
-            if self.IF_DETECTED(timestamp+1, vehID, subList):
-                tripInfo["distance"] += subList[timestamp+1][vehID][132] - subList[timestamp][vehID][132]
-                tripInfo["timespan"] += 1
-                tripInfo["accum_lane_pos"] += self.GET_ACCUMULATED_LANE_POSITION(laneID=subList[timestamp+1][vehID][81], lanePos=subList[timestamp+1][vehID][86]) \
-                    - self.GET_ACCUMULATED_LANE_POSITION(laneID=subList[timestamp][vehID][81], lanePos=subList[timestamp][vehID][86])
-                ''' if trespass ? '''
-                if subList[timestamp][vehID][81] != subList[timestamp+1][vehID][81]:
-                    tripInfo["trespass"] += 1
-                ''' to prevent keyerror '''
-                if timestamp+1 < len(subList)-1:
-                    self.UPDATE_CHECK(tripInfo, subList, timestamp+1, vehID)
-            subList[timestamp+1][vehID]= "checked"
-
+    def UPDATE_CHECK(self, tripInfo, subList, timestamp, vehID, startDist):
+        if vehID in subList[timestamp+1] and self.IF_DETECTED(timestamp+1, vehID, subList):
+            tripInfo["timespan"] += 1
+            tripInfo["accum_lane_pos"] += self.GET_ACCUMULATED_LANE_POSITION(laneID=subList[timestamp+1][vehID][81], lanePos=subList[timestamp+1][vehID][86]) \
+                - self.GET_ACCUMULATED_LANE_POSITION(laneID=subList[timestamp][vehID][81], lanePos=subList[timestamp][vehID][86])
+            ''' if trespass ? '''
+            if subList[timestamp][vehID][81] != subList[timestamp+1][vehID][81]:
+                tripInfo["trespass"] += 1
+            ''' to prevent keyerror '''
+            if timestamp+1 < len(subList)-1:
+                self.UPDATE_CHECK(tripInfo, subList, timestamp+1, vehID, startDist)
+            else:
+                self.UPDATE_DISTANCE(tripInfo, subList, timestamp, vehID, startDist)
+        else:
+            self.UPDATE_DISTANCE(tripInfo, subList, timestamp, vehID, startDist)
+        subList[timestamp+1][vehID]= "checked"
+        
+    def UPDATE_DISTANCE(self, tripInfo, subList, timestamp, vehID, startDist):
+        tripInfo["distance"] += subList[timestamp][vehID][132] - startDist + subList[timestamp][vehID][64]/3.6 * self.step_length / 2
+        
     def IF_DETECTED(self, timestamp:int, vehID:str, subList)->bool:
         laneID = subList[timestamp][vehID][81]
         lanePos = subList[timestamp][vehID][86]
-        # try:
-        #     if self.detectionZoneDict[laneID]['start'] < lanePos <= self.detectionZoneDict[laneID]['end']:
-        #         return True
-        #     else:
-        #         return False
-        # except KeyError:
-        #     print (
-        #         ("Unexpected lane ID: %s caused by vehicle %s at time %s!") %
-        #         (laneID, vehID, timestamp)
-        #         )
         if  laneID not in self.detectionZoneDict.keys():
             return False
         if not self.detectionZoneDict[laneID]['start'] < lanePos <= self.detectionZoneDict[laneID]['end']:
@@ -163,61 +201,54 @@ class detectionZone(sumo.Sumo):
                 accumLanePos += self.detectionZoneList[i][1] - self.detectionZoneList[i][0]
         return accumLanePos
     
-    def scan(self, vehicleSub, subscriptionResults):
-        # print ('vehicles', vehicleSub)
-        # print ('subscriptions', subscriptionResults)
-        for laneID in self.coveredEdges:
-            vehDetectList = traci.lane.getLastStepVehicleIDs(laneID)
-            for vehID in vehicleSub:
-                if traci.vehicle.getLaneID(vehID) not in self.coveredEdges:
-                    vehicleSub.remove(vehID)
-                    traci.vehicle.unsubscribe(vehID)
-            for vehID in vehDetectList:
-                if vehID not in vehicleSub:
-                    vehicleSub.append(vehID)
-                    traci.vehicle.subscribe(vehID, (tc.VAR_LANEPOSITION, tc.VAR_DISTANCE, tc.VAR_LANE_ID))
-        subscriptionResults.append(
-            copy.deepcopy(traci.vehicle.getAllSubscriptionResults())
-            )
-        # print (vehicleSub)
+    
+    def collect(self):
+        ''' _sub denotes the subscription results of all vehicles of the current time stamp '''
+        sub = {}
+        for vehID in self.detectedVehicles:
+            sub[vehID] = traci.vehicle.getSubscriptionResults(vehID)
+        self.subscriptionResults.append(sub)
+        ''' below are to facilitate debug '''
+        # detected = self.detectedVehicles
+        # thissub = self.subscriptionResults
+        # print (sub)
+        ''' '''
         if self.mode == "sliding":
-            self.get_last_traffic_states(subscriptionResults)
+            self.get_last_traffic_states()
         elif self.mode == "sectioned":
             time = traci.simulation.getTime()
-            if not time % int(self.window):
-                self.get_last_traffic_states(subscriptionResults)
+            if not time % int(self.window*self.step_length):
+                self.get_last_traffic_states()
     
-    def get_last_traffic_states(self, subscriptions):
+    def get_last_traffic_states(self):
         time = traci.simulation.getTime()
         # print (time,self.window)
-        if time < self.window:
+        if time < self.window*self.step_length:
             return 
         # print (subscriptions)
-        tresDict = self.CONCATE_VEHICLE_SUB(subscriptions[-self.window:])
+        tresDict = self.CONCATE_VEHICLE_SUB(self.subscriptionResults[-self.window:])
         tresArray = np.asarray([ list(tresDict[tresID].values()) for tresID in tresDict ] )
         # print ("tres:", tresArray)
         # print (tresArray.shape)
         if tresArray.shape[0] == 0:
             return np.asarray([[0, 0, 0, time, time+self.window*self.step_length]])
-        totalTresDistance = np.sum(tresArray[:,0])/1000
+        totalTresDistance = np.sum(tresArray[:,2])/1000
         totalTresTime = np.sum(tresArray[:,1])/3600*self.step_length
         zoneDensity = totalTresTime / (self.zoneLength/1000) / (self.window/3600*self.step_length)
         zoneFlow = totalTresDistance / (self.zoneLength/1000) / (self.window/3600*self.step_length)
+        # print (zoneDensity, zoneFlow)
+        # print (self.zoneLength, self.window*self.step_length)
         ''' update state history '''
-        _state = np.asarray([[zoneDensity, zoneFlow, zoneFlow/zoneDensity, time, time+self.window*self.step_length]])
+        _state = np.asarray([[zoneDensity, zoneFlow, zoneFlow/zoneDensity, time-self.window*self.step_length, time]])
         # print (self.allstates.shape, _state.shape)
         self.allstates = np.concatenate((self.allstates, _state), axis=0)
+        ''' get the last step trespassing Array '''
+        self.tresArray = tresArray
+        self.tresDict = tresDict
         return _state
         
 if __name__ == "__main__":
 
-    detector = detectionZone(shape = ['25003401-AddedOnRampEdge_0', 2000, 100])
+    detector = detectionZone(['25003401-AddedOnRampEdge_1', 2000, 100])
     
-    A = np.asarray([[1,2,3]])
-    B = np.zeros((0,3))
-    print (A.shape, B.shape)
-    AB = np.concatenate((A, B))
-    C = np.asarray([[2,3,4]])
-    ABC = np.concatenate((AB, C))
-    print(ABC)
     

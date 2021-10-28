@@ -39,20 +39,10 @@ class Simulation(sumo.Sumo):
 
 if __name__ == "__main__":
     
-    # zoneShape = ['25003401-AddedOnRampEdge_0', 2000, 100]
     detectorParameters = [['24794598#0.51_1', 2000, 100], "sectioned", 10]
-    # detector = detectionZone(zoneShape)
-    # detectionZoneList = detector.detectionZoneList
     sim = Simulation(detector = detectorParameters)
     sim.Run()
-    # allSubResults = sim.SubscriptionResults
-    # tresDict = sim.detected_trespassing
-    # tresArray = np.asarray(
-    #     [ list(tresDict[tresID].values()) for tresID in tresDict ]
-    #     )
     allstates = sim.detector.allstates
-    
-    
     print ("sim time: ", traci.simulation.getTime())
     graph.plot_states(allstates)
     
